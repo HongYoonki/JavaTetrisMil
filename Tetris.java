@@ -13,6 +13,7 @@ import javax.swing.JPanel;
 
 public class Tetris extends JFrame{
 	
+	private TetrisGame game;
 	private int gameTime;
 	private int bTime; // block time
 	private int score;
@@ -20,6 +21,7 @@ public class Tetris extends JFrame{
 	private int blockSize;
 	private boolean isGameOver;
 	private boolean callNextBlock;
+	private boolean hardDropped;
 	private int level;
 	
 	private final int ROW = 20;
@@ -28,6 +30,11 @@ public class Tetris extends JFrame{
 	private int coord[] = {4, 1};
 	private int bcoord[][] = new int[4][2];
 	private Queue<Integer> blockQ;
+	private int lastType;
+	private int beforeType;
+	
+	private int marginX;
+	private int marginY;
 	
 	private int[][] iBoard = {
 			{1, 0, 0, 0, 0, 0, 0, 0, 0, 1},
@@ -66,6 +73,14 @@ public class Tetris extends JFrame{
 	        {{-1, -1}, {0, -1}, {0, 0}, {0, 1}}, // J block
 	        {{1, -1}, {0, -1}, {0, 0}, {0, 1}} // L block
 	};
+	private Color[] colorTable = new Color[] {
+			new Color(204, 153, 255),
+			new Color(169, 209, 247),
+			new Color(204, 153, 255),
+			new Color(180, 240, 167),
+			new Color(255, 255, 191),
+			new Color(255, 223, 190),
+			new Color(255, 177, 176)};
 	
 	int[][] rotateP = new int[][] {
 		{0, -1},
@@ -90,12 +105,15 @@ public class Tetris extends JFrame{
 		this.isGameOver = false;
 		this.level = 0;
 		this.callNextBlock = false;
+		this.marginX = this.marginY = 20;
+		this.hardDropped = false;
 		
 		List<Integer> list = new ArrayList<>();
 		for(int i = 0 ; i < 7 ; i++)list.add(i);
 		Collections.shuffle(list);
 		for(int i = 0 ; i < 7 ; i++)
 			this.blockQ.offer(list.get(i));
+		this.lastType = blockQ.peek();
 		int qt = blockQ.poll();
 		for(int i = 0 ; i < 4 ; i++) {
 			this.bcoord[i][0] = this.coordsTable[qt][i][0];
@@ -107,7 +125,7 @@ public class Tetris extends JFrame{
 		setSize(600, 500);
 		setVisible(true);
 		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		TetrisGame game = new TetrisGame();
+		game = new TetrisGame();
 		setContentPane(game);
 		setFocusable(true);
 		setTitle("Tetris");
@@ -146,7 +164,6 @@ public class Tetris extends JFrame{
 					hardDrop();
 					break;
 				} 
-				System.out.println("KeyDown");
 			}
 		});
 		
@@ -160,7 +177,8 @@ public class Tetris extends JFrame{
 					Thread.sleep(dropDur[level]);
 					while(!isGameOver) {
 						Thread.sleep(dropDur[level]);
-						if(!drop() || callNextBlock) {
+						if(!drop()) {
+							System.out.println("222222222222");
 							int l = checkLine();
 							score += l*1000;
 							//nextBlock();
@@ -176,8 +194,11 @@ public class Tetris extends JFrame{
 	
 	public void nextBlock() {
 		coord = new int[] {4, 1};
+		beforeType = lastType;
+		lastType = blockQ.peek();
 		bcoord = coordsTable[blockQ.poll()].clone();
 		blockQ.offer(getRandomBlock());
+		System.out.println(blockQ.toString());
 	}
 	
 	public boolean drop() {
@@ -190,6 +211,10 @@ public class Tetris extends JFrame{
 		}else {
 			solidify();
 			System.out.println("solidify() called");
+			if(hardDropped) {
+				hardDropped = false;
+				return false;
+			}
 			nextBlock();
 			return false;
 		}
@@ -197,8 +222,9 @@ public class Tetris extends JFrame{
 	}
 	
 	public void hardDrop() {
-		while(drop());
 		callNextBlock = true;
+		hardDropped = true;
+		while(drop());
 		nextBlock();
 	}
 	
@@ -295,7 +321,7 @@ public class Tetris extends JFrame{
 				for(int j = 1 ; j < COL + 1; j++) {
 					board[i][j] = BTYPE.VOID;
 				}
-				for(int ii = i ; ii >= 0 ; ii--) {
+				for(int ii = i ; ii >= 2 ; ii--) {
 					for(int jj = 1 ; jj < COL + 1 ; jj++) {
 						try {
 							if(board[ii-1][jj] == BTYPE.VOID || board[ii-1][jj] == BTYPE.BRICK)
@@ -309,7 +335,7 @@ public class Tetris extends JFrame{
 				line++;
 			}
 		}
-		
+		game.repaint();
 		System.out.println("line clear! ==================");
 		return line;
 	}
@@ -329,36 +355,53 @@ public class Tetris extends JFrame{
 		@Override
 		public void paintComponent(Graphics g) {
 			g.setColor(getBackground());
-			g.fillRect((COL+2)*blockSize, 0, 100, 100);
+			g.fillRect(marginX + (COL*2+2)*blockSize, marginY + 0, 100, 100);
 			g.setColor(Color.black);
-			g.drawString("Score: "+score, (COL+2)*blockSize, blockSize*1);
+			g.drawString("Score: "+score, marginX + (COL*2+2)*blockSize, marginY + blockSize*1);
 			for(int y = 0 ; y < ROW + 1; y++) {
 				for(int x = 0 ; x < COL + 2 ; x++) {
 					if(tmpBoard[y][x] != board[y][x]) {
 						tmpBoard[y][x] = board[y][x];
-						switch(board[y][x]) {
+						BTYPE s = board[y][x];
+						switch(s) {
 						case VOID:
 							g.setColor(getBackground());
-							g.fillRect(x*blockSize, y*blockSize, blockSize, blockSize);
+							g.fillRect(marginX + x*blockSize, marginY + y*blockSize, blockSize, blockSize);
 							break;
 						case BRICK:
 							g.setColor(Color.gray);
-							g.fillRect(x*blockSize+1, y*blockSize+1, blockSize-2, blockSize-2);
+							g.fillRect(marginX + x*blockSize+1, marginY + y*blockSize+1, blockSize-2, blockSize-2);
 							break;
 						case MOVE:
-							g.setColor(Color.gray);
-							g.drawRect(x*blockSize+1, y*blockSize+1, blockSize-2, blockSize-2);
+							g.setColor(colorTable[lastType]);
+							g.fillRect(marginX + x*blockSize+1, marginY + y*blockSize+1, blockSize-2, blockSize-2);
 							break;
 						case WALL:
 							g.setColor(Color.black);
-							g.fillRect(x*blockSize, y*blockSize, blockSize, blockSize);
+							g.fillRect(marginX + x*blockSize, marginY + y*blockSize, blockSize, blockSize);
 							break;
 						case SHADOW:
 							g.setColor(Color.LIGHT_GRAY);
-							g.drawRect(x*blockSize+1, y*blockSize+1, blockSize-2, blockSize-2);
+							g.drawRect(marginX + x*blockSize+1, marginY + y*blockSize+1, blockSize-2, blockSize-2);
 						}
 					}
 				}
+			}
+
+			g.setColor(getBackground());
+			g.fillRect(
+					marginX + (COL+2)*blockSize + blockSize*3 + 1 + -1*blockSize,
+					marginY + blockSize*3 + 1 + -1*blockSize,
+					blockSize*4-2,
+					blockSize*4-2);
+			for(int i = 0 ; i < 4 ; i++) {
+				int t = blockQ.peek();
+				g.setColor(colorTable[t]);
+				g.fillRect(
+						marginX + (COL+2)*blockSize + blockSize*3 + 1 + coordsTable[t][i][0]*blockSize,
+						marginY + blockSize*3 + 1 + coordsTable[t][i][1]*blockSize,
+						blockSize-2,
+						blockSize-2);
 			}
 			repaint();
 		}
