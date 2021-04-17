@@ -1,4 +1,5 @@
 import java.awt.Color;
+import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
@@ -13,6 +14,9 @@ import javax.swing.JPanel;
 
 public class Tetris extends JFrame {
 
+	private final int T_WIDTH = 600;
+	private final int T_HEIGHT = 550;
+	
 	private TetrisGame game;
 	private int gameTime;
 	private int bTime; // block time
@@ -22,8 +26,13 @@ public class Tetris extends JFrame {
 	private boolean isGameOver;
 	private boolean hardDropped;
 	private int level;
+	private final int deadLine = 4;
+	private boolean restart = false;
+	private boolean exit = false;
+	private boolean canHold;
+	private int holdBlock;
 
-	private final int ROW = 20;
+	private final int ROW = 22;
 	private final int COL = 8;
 
 	private int coord[] = { 4, 1 };
@@ -31,6 +40,7 @@ public class Tetris extends JFrame {
 	private Queue<Integer> blockQ;
 	private int lastType;
 	private int beforeType;
+	private Thread gameThread;
 
 	private int marginX;
 	private int marginY;
@@ -42,10 +52,11 @@ public class Tetris extends JFrame {
 			{ 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 }, { 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 }, { 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
 			{ 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 }, { 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 }, { 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
 			{ 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 }, { 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 }, { 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
+			{ 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 },{ 1, 0, 0, 0, 0, 0, 0, 0, 0, 1 },
 			{ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 } };
-	private Tetris.BTYPE[][] board = new Tetris.BTYPE[22][10];
+	private Tetris.BTYPE[][] board = new Tetris.BTYPE[ROW+1][COL+2];
 
-	private Tetris.BTYPE[][] tmpBoard = new Tetris.BTYPE[22][10];
+	private Tetris.BTYPE[][] tmpBoard = new Tetris.BTYPE[ROW+1][COL+2];
 
 	int[][][] coordsTable = new int[][][] { { { 0, -1 }, { 0, 0 }, { -1, 0 }, { -1, 1 } }, // S block
 			{ { 0, -1 }, { 0, 0 }, { 1, 0 }, { 1, 1 } }, // Z block
@@ -55,9 +66,15 @@ public class Tetris extends JFrame {
 			{ { -1, -1 }, { 0, -1 }, { 0, 0 }, { 0, 1 } }, // J block
 			{ { 1, -1 }, { 0, -1 }, { 0, 0 }, { 0, 1 } } // L block
 	};
-	private Color[] colorTable = new Color[] { new Color(204, 153, 255), new Color(169, 209, 247),
-			new Color(204, 153, 255), new Color(180, 240, 167), new Color(255, 255, 191), new Color(255, 223, 190),
-			new Color(255, 177, 176) };
+	private Color[] colorTable = new Color[] { 
+			new Color(102, 242, 139), // S green
+			new Color(255, 112, 155), // Z red
+			new Color(105, 237, 255), // I sky blue
+			new Color(186, 102, 255), // T purple
+			new Color(244, 250, 137), // O yellow
+			new Color(105, 105, 255), // J navy
+			new Color(255, 219, 102)  // L orange
+			};
 
 	int[][] rotateP = new int[][] { { 0, -1 }, { 1, 0 } };
 
@@ -66,35 +83,11 @@ public class Tetris extends JFrame {
 	}
 
 	public Tetris() {
-
-		this.gameTime = 0;
-		this.bTime = 0;
-		this.dropDur = new int[] { 1000, 800, 600, 400, 200 };
-		this.blockSize = 20;
-		this.blockQ = new LinkedList<>();
-		this.isGameOver = false;
-		this.level = 0;
-		this.marginX = this.marginY = 20;
-		this.hardDropped = false;
-
-		List<Integer> list = new ArrayList<>();
-		for (int i = 0; i < 7; i++)
-			list.add(i);
-		Collections.shuffle(list);
-		for (int i = 0; i < 7; i++)
-			this.blockQ.offer(list.get(i));
-		this.lastType = blockQ.peek();
-		int qt = blockQ.poll();
-		for (int i = 0; i < 4; i++) {
-			this.bcoord[i][0] = this.coordsTable[qt][i][0];
-			this.bcoord[i][1] = this.coordsTable[qt][i][1];
-			System.out.println("()" + this.bcoord[i][0] + ", " + this.bcoord[i][1]);
-		}
-
-		setSize(600, 500);
+		game = new TetrisGame();
+		init();
+		setSize(T_WIDTH, T_HEIGHT);
 		setVisible(true);
 		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		game = new TetrisGame();
 		setContentPane(game);
 		setFocusable(true);
 		setTitle("Tetris");
@@ -129,46 +122,92 @@ public class Tetris extends JFrame {
 				case KeyEvent.VK_RIGHT:
 					moveHorizontal(true);
 					break;
+				case KeyEvent.VK_Z:
+					hold();
+					break;
 				case KeyEvent.VK_SPACE:
 					hardDrop();
+					break;
+				case KeyEvent.VK_ENTER:
+					if(isGameOver) {
+						restart = true;
+						init();
+					}
+					break;
+				case KeyEvent.VK_ESCAPE:
+					exit = true;
 					break;
 				}
 			}
 		});
 
 		// Thread that blocks down
-		(new Thread() {
+		gameThread = new Thread() {
 			@Override
 			public void run() {
 				System.out.println("Enter Thread");
 				try {
 					Thread.sleep(dropDur[level]);
-					while (!isGameOver) {
-						Thread.sleep(dropDur[level]);
-						boolean d = drop();
-						if (!d) {
-							updateScore();
-							// nextBlock();
+					while(!exit){
+						while (!isGameOver) {
+							Thread.sleep(dropDur[level]);
+							boolean d = drop();
+							if (!d) {
+								updateScore();
+								// nextBlock();
+							}
 						}
+						while(isGameOver) {};
 					}
 				} catch (Exception e) {
 
 				}
 			}
-		}).run();
+		};
+		gameThread.run();
 		
 		
 	}
+	private void init() {
 
+		this.gameTime = 0;
+		this.bTime = 0;
+		this.dropDur = new int[] { 1000, 800, 600, 400, 200 };
+		this.blockSize = 20;
+		this.blockQ = new LinkedList<>();
+		this.isGameOver = false;
+		this.level = 0;
+		this.marginX = this.marginY = 20;
+		this.hardDropped = false;
+		this.holdBlock = -1;
+		this.canHold = true;
+		
+		List<Integer> list = new ArrayList<>();
+		for (int i = 0; i < 7; i++)
+			list.add(i);
+		Collections.shuffle(list);
+		for (int i = 0; i < 7; i++)
+			this.blockQ.offer(list.get(i));
+		this.lastType = blockQ.poll();
+		for (int i = 0; i < 4; i++) {
+			this.bcoord[i][0] = this.coordsTable[lastType][i][0];
+			this.bcoord[i][1] = this.coordsTable[lastType][i][1];
+			System.out.println("()" + this.bcoord[i][0] + ", " + this.bcoord[i][1]);
+		}
+		game.init();
+		game.repaint();
+	}
 	public void nextBlock() {
 		coord = new int[] { 4, 1 };
 		beforeType = lastType;
-		lastType = blockQ.peek();
-		bcoord = coordsTable[blockQ.poll()].clone();
+		lastType = blockQ.poll();
+		bcoord = coordsTable[lastType].clone(); // blockQ.poll()
 		blockQ.offer(getRandomBlock());
+		checkCollision();
 		delBlock();
 		setBlock();
 		System.out.println(blockQ.toString());
+		canHold = true;
 	}
 
 	public boolean drop() {
@@ -196,6 +235,27 @@ public class Tetris extends JFrame {
 		while (drop());
 		nextBlock();
 		updateScore();
+	}
+	
+	public void hold() {
+		if(!canHold || lastType == holdBlock)
+			return;
+		this.canHold = false;
+		if(holdBlock < 0) {
+			holdBlock = beforeType;
+			delBlock();
+			nextBlock();
+			return;
+		}
+		delBlock();
+		coord = new int[] {4,1};
+		bcoord = coordsTable[holdBlock].clone();
+		int t = holdBlock;
+		holdBlock = lastType;
+		lastType = t;
+		checkCollision();
+		delBlock();
+		setBlock();
 	}
 
 	/**
@@ -234,9 +294,14 @@ public class Tetris extends JFrame {
 		if (clockwise) {
 			for (int i = 0; i < 4; i++) {
 				int[] off = rotateCoord(new int[] { bcoord[i][0], bcoord[i][1] });
-				BTYPE t = board[coord[1] + off[1]][coord[0] + off[0]];
-				if (t == BTYPE.BRICK || t == BTYPE.WALL)
+				try {
+					BTYPE t = board[coord[1] + off[1]][coord[0] + off[0]];	
+					if (t == BTYPE.BRICK || t == BTYPE.WALL)
+						return false;				
+				}catch(Exception e) {
+					System.out.println(String.format("Error: coord{%d, %d}, off{%d, %d}", coord[0], coord[1], off[0], off[1]));
 					return false;
+				}
 			}
 		}
 		return true;
@@ -250,7 +315,15 @@ public class Tetris extends JFrame {
 	public int getRandomBlock() {
 		return (int) Math.floor(Math.random() * 7);
 	}
-
+	
+	public boolean checkCollision() {
+		for(int i = 0 ; i > 4 ; i++)
+			if(board[coord[1] + bcoord[i][1]][coord[0] + bcoord[i][0]] == BTYPE.BRICK) {
+				isGameOver = true;
+				return true;
+			}
+		return false;
+	}
 	/**
 	 * rotateCoord
 	 * 
@@ -273,7 +346,7 @@ public class Tetris extends JFrame {
 	}
 
 	public void setBlock() {
-		for (int i = 0; i < 4; i++)
+		for (int i = 0; i < 4; i++) 
 			board[coord[1] + bcoord[i][1]][coord[0] + bcoord[i][0]] = BTYPE.MOVE;
 	}
 
@@ -310,8 +383,11 @@ public class Tetris extends JFrame {
 				line++;
 			}
 		}
-		game.repaint();
-		System.out.println("line clear! ==================");
+		for(int i = 1 ; i < COL + 1; i++)
+			if(board[deadLine][i] == BTYPE.BRICK)
+				isGameOver = true;
+		if(!isGameOver)
+			game.repaint();
 		return line;
 	}
 	
@@ -325,23 +401,38 @@ public class Tetris extends JFrame {
 		int[][] offsetCoord = new int[4][2];
 
 		public TetrisGame() {
-			for (int i = 0; i < ROW + 1; i++)
-				for (int j = 0; j < COL + 2; j++) {
+			init();
+		}
+		
+		public void init() {
+			for (int i = 0; i < iBoard.length; i++)
+				for (int j = 0; j < iBoard[0].length; j++) {
 					board[i][j] = iBoard[i][j] == 1 ? BTYPE.WALL : BTYPE.VOID;
 					tmpBoard[i][j] = BTYPE.VOID;
 				}
-			iBoard = null;
 		}
 
 		@Override
 		public void paintComponent(Graphics g) {
+			// clear board when restart
+			if(restart) {
+				g.clearRect(0, 0, T_WIDTH, T_HEIGHT);
+				restart = false;
+				g.setColor(getBackground());
+				g.fillRect(0, 0, T_WIDTH, T_HEIGHT);
+			}
+			
 			g.setColor(getBackground());
 			g.fillRect(marginX + (COL * 2 + 2) * blockSize, marginY + 0, 100, 100);
 			g.setColor(Color.black);
 			g.drawString("Score: " + score, marginX + (COL * 2 + 2) * blockSize, marginY + blockSize * 1);
+			
+			// draw dead line
+			g.drawLine(marginX + blockSize, marginY + blockSize*(deadLine+1), marginX + blockSize*9, marginY + blockSize*(deadLine+1));
+			
 			for (int y = 0; y < ROW + 1; y++) {
 				for (int x = 0; x < COL + 2; x++) {
-					if (tmpBoard[y][x] != board[y][x]) {
+					if (tmpBoard[y][x] != board[y][x] || y < 5) {
 						tmpBoard[y][x] = board[y][x];
 						BTYPE s = board[y][x];
 						switch (s) {
@@ -371,23 +462,52 @@ public class Tetris extends JFrame {
 					}
 				}
 			}
-
+			//draw next block and hold block
 			g.setColor(getBackground());
-			g.fillRect(marginX + (COL + 2) * blockSize + blockSize * 3 + 1 + -1 * blockSize,
-					marginY + blockSize * 3 + 1 + -1 * blockSize, blockSize * 4 - 2, blockSize * 4 - 2);
+			g.fillRect(marginX + (COL + 4) * blockSize,
+					marginY + blockSize * 2,
+					blockSize * 4 - 2,
+					(blockSize * 4 - 2)*3);
+			g.setColor(Color.black);
+			g.drawString("next block", marginX + (COL + 4) * blockSize,
+					marginY + blockSize * 2 - 10);
+			g.drawString("hold block (Key: Z)", marginX + (COL + 4) * blockSize,
+					marginY + blockSize * 7 - 10);
 			for (int i = 0; i < 4; i++) {
 				int t = blockQ.peek();
 				g.setColor(colorTable[t]);
 				g.fillRect(marginX + (COL + 2) * blockSize + blockSize * 3 + 1 + coordsTable[t][i][0] * blockSize,
 						marginY + blockSize * 3 + 1 + coordsTable[t][i][1] * blockSize, blockSize - 2, blockSize - 2);
+				
+
+				t = holdBlock;
+				if(t >= 0) {
+					g.setColor(colorTable[t]);
+					g.fillRect(marginX + (COL + 2) * blockSize + blockSize * 3 + 1 + coordsTable[t][i][0] * blockSize,
+							marginY + blockSize * 8 + 1 + coordsTable[t][i][1] * blockSize,
+							blockSize - 2,
+							blockSize - 2);					
+				}
 			}
-			repaint();
+			if(!isGameOver)
+				repaint();
+			else {
+				g.setColor(new Color(.0f, .0f, .0f, .5f));
+				g.fillRect(0, 0, T_WIDTH, T_HEIGHT);
+				g.setColor(Color.white);
+				int fsize = 30;
+				g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, fsize));
+				g.drawString("GAME OVER", (int)(T_WIDTH/2 - 3.5*fsize), T_HEIGHT/2 - fsize);
+				String tmpS = "socre: "+score;
+				g.drawString(tmpS, (int)(T_WIDTH/2 - tmpS.length()/2*fsize), T_HEIGHT/2);
+				g.drawString("Press Enter to restart", (int)(T_WIDTH/2 - 5.5*fsize), T_HEIGHT/2 + fsize);
+			}
 		}
 	}
 
 	static public void main(String[] args) {
 		new Tetris();
-
+		
 		return;
 	}
 }
